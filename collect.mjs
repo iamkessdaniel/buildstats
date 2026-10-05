@@ -211,7 +211,7 @@ const round = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - 
 function aggregate(keyOf, label) {
   const B = {};
   const get = (k) => (B[k] ||= { [label]: k, tokens: 0, output: 0, calls: 0, sessions: new Set(), subagentSessions: new Set(), activeHours: 0,
-    prompts: 0, keyboardHours: 0, commits: 0, aiCommits: 0, linesChanged: 0, activeDays: new Set(), agents: {}, models: {}, sectors: {}, work: {}, matrix: {}, promptSectors: {}, commitSectors: {}, lineSectors: {} });
+    prompts: 0, keyboardHours: 0, clockMin: 0, parallelMin: 0, peak: 0, commits: 0, aiCommits: 0, linesChanged: 0, activeDays: new Set(), agents: {}, models: {}, sectors: {}, work: {}, matrix: {}, promptSectors: {}, commitSectors: {}, lineSectors: {} });
   const day = (ts) => new Date(ts).toISOString().slice(0, 10);
   for (const e of events) {
     const b = get(keyOf(e.ts));
@@ -242,6 +242,27 @@ function aggregate(keyOf, label) {
   for (const p of prompts) if (p.session) (typed[p.session] ||= []).push(p.ts);
   gaps(agentRuns, IDLE_MS, 'activeHours');
   gaps(typed, (config.keyboardIdleMinutes ?? 30) * 60000, 'keyboardHours');
+
+  // Parallel time. Every session and sub-agent run is a stream of work; a
+  // minute counts once on the clock but once per stream in parallel hours.
+  // parallelHours / clockHours is how many streams ran at once on average.
+  const streams = {}, PCUT = (config.parallelIdleMinutes ?? config.keyboardIdleMinutes ?? 30) * 60000;
+  for (const e of events) (streams[(e.sub ? 'sub:' : '') + e.session] ||= []).push(e.ts);
+  for (const p of prompts) if (p.session) (streams[p.session] ||= []).push(p.ts);
+  const minutes = new Map();
+  for (const list of Object.values(streams)) {
+    list.sort((a, b) => a - b);
+    const mine = new Set();
+    for (let i = 1; i < list.length; i++) {
+      if (list[i] - list[i - 1] > PCUT) continue;
+      for (let m = Math.floor(list[i - 1] / 60000); m < Math.floor(list[i] / 60000); m++) mine.add(m);
+    }
+    for (const m of mine) minutes.set(m, (minutes.get(m) || 0) + 1);
+  }
+  for (const [m, n] of minutes) {
+    const b = get(keyOf(m * 60000));
+    b.clockMin++; b.parallelMin += n; if (n > b.peak) b.peak = n;
+  }
   for (const c of commits) {
     const b = get(keyOf(c.ts)); b.commits++; if (c.ai) b.aiCommits++; b.linesChanged += c.lines; b.activeDays.add(day(c.ts));
     add(b.commitSectors, c.sector, 1); add(b.lineSectors, c.sector, c.lines);
@@ -249,6 +270,8 @@ function aggregate(keyOf, label) {
   return Object.values(B).map((b) => ({
     [label]: b[label], tokens: b.tokens, outputTokens: b.output, modelCalls: b.calls, sessions: b.sessions.size,
     subagentRuns: b.subagentSessions.size, prompts: b.prompts, keyboardHours: Math.round(b.keyboardHours * 10) / 10, agentHours: Math.round(b.activeHours * 10) / 10, activeDays: b.activeDays.size,
+    clockHours: Math.round(b.clockMin / 6) / 10, parallelHours: Math.round(b.parallelMin / 6) / 10,
+    parallelFactor: b.clockMin ? Math.round(b.parallelMin / b.clockMin * 100) / 100 : 0, peakParallel: b.peak,
     commits: b.commits, aiAssistedCommits: b.aiCommits, linesChanged: b.linesChanged,
     agents: round(b.agents), models: round(b.models), sectors: round(b.sectors), work: round(b.work), matrix: round(b.matrix),
     commitsBySector: round(b.commitSectors), linesBySector: round(b.lineSectors),
@@ -281,12 +304,15 @@ fs.writeFileSync(histFile, JSON.stringify(hist));
 const sum = (k) => months.reduce((s, r) => s + (r[k] || 0), 0);
 const firstOf = (k) => (months.find((m) => m[k] > 0) || {}).month || null;
 const out = {
-  schema: 'buildstats/2', generated: new Date().toISOString(), name: config.name || undefined,
+  schema: 'buildstats/3', generated: new Date().toISOString(), name: config.name || undefined,
   since: hist.lifetime.since,
   coverage: { tokens: firstOf('tokens'), prompts: firstOf('prompts'), aiAssistedCommits: firstOf('aiAssistedCommits'), commits: firstOf('commits'),
     tokenMonths: months.filter((m) => m.tokens > 0).map((m) => m.month) },
   totals: { tokens: sum('tokens'), outputTokens: sum('outputTokens'), sessions: hist.lifetime.sessions, subagentRuns: sum('subagentRuns'),
     prompts: sum('prompts'), keyboardHours: Math.round(sum('keyboardHours')), agentHours: Math.round(sum('agentHours')), activeDays: hist.lifetime.activeDays,
+    clockHours: Math.round(sum('clockHours')), parallelHours: Math.round(sum('parallelHours')),
+    parallelFactor: sum('clockHours') ? Math.round(sum('parallelHours') / sum('clockHours') * 100) / 100 : 0,
+    peakParallel: Math.max(0, ...months.map((m) => m.peakParallel || 0)),
     commits: sum('commits'), aiAssistedCommits: sum('aiAssistedCommits'), linesChanged: sum('linesChanged') },
   months, weeks,
 };
