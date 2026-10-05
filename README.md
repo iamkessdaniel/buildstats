@@ -40,9 +40,20 @@ node buildstats/collect.mjs --out stats.json                   # look before you
 - `idleMinutes` / `keyboardIdleMinutes`: gaps longer than this do not count towards agent hours or hours at the keyboard.
 - `publish`: where `--publish` sends the summary, and the bearer token it sends.
 
-## Parallel time
+## Parallel time (AI PTM)
 
 Agents let you work in parallel: several sessions and sub-agents can run at once. buildstats counts every active minute once on the clock (`clockHours`) and once per stream that was working (`parallelHours`). `parallelFactor` is the ratio, the average number of streams running per clock hour, and `peakParallel` is the most that ran in the same minute.
+
+## Companion metrics
+
+| Field | Meaning |
+| --- | --- |
+| `delegationRatio` | Agent working hours divided by keyboard hours, in months that have both |
+| `autonomySpanMin` | Median agent minutes between one of your prompts and the agent's last call before your next prompt |
+| `promptLeverageMin` | Mean agent minutes set off by one prompt |
+| `method` | The metric, version and idle cut-off behind every figure: `AI PTM v1.0, tau = 30 min` |
+
+The full AI PTM methodology, including prior art, is at [kessdaniel.com/ai-ptm.html](https://kessdaniel.com/ai-ptm.html).
 
 ## Type of work
 

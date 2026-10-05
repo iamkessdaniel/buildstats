@@ -204,6 +204,7 @@ const commits = collectGit();
 const prompts = collectPrompts();
 for (const e of events) e.work = workType(e.tools);
 
+const median = (a) => { const v = [...a].sort((x, y) => x - y); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : 0; };
 const isoMonth = (ts) => new Date(ts).toISOString().slice(0, 7);
 const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
 const round = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, typeof v === 'object' ? round(v) : Math.round(v)]));
@@ -211,7 +212,7 @@ const round = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - 
 function aggregate(keyOf, label) {
   const B = {};
   const get = (k) => (B[k] ||= { [label]: k, tokens: 0, output: 0, calls: 0, sessions: new Set(), subagentSessions: new Set(), activeHours: 0,
-    prompts: 0, keyboardHours: 0, clockMin: 0, parallelMin: 0, peak: 0, commits: 0, aiCommits: 0, linesChanged: 0, activeDays: new Set(), agents: {}, models: {}, sectors: {}, work: {}, matrix: {}, promptSectors: {}, commitSectors: {}, lineSectors: {} });
+    prompts: 0, keyboardHours: 0, clockMin: 0, parallelMin: 0, peak: 0, spans: [], commits: 0, aiCommits: 0, linesChanged: 0, activeDays: new Set(), agents: {}, models: {}, sectors: {}, work: {}, matrix: {}, promptSectors: {}, commitSectors: {}, lineSectors: {} });
   const day = (ts) => new Date(ts).toISOString().slice(0, 10);
   for (const e of events) {
     const b = get(keyOf(e.ts));
@@ -259,6 +260,22 @@ function aggregate(keyOf, label) {
     }
     for (const m of mine) minutes.set(m, (minutes.get(m) || 0) + 1);
   }
+  // Autonomy span and prompt leverage: agent minutes between consecutive
+  // prompts of a session (only where both prompts and agent logs exist).
+  const agentTimes = {};
+  for (const e of events) if (!e.sub) (agentTimes[e.session] ||= []).push(e.ts);
+  for (const [sess, ps] of Object.entries(typed)) {
+    const at = (agentTimes[sess] || []).sort((a, b) => a - b);
+    if (!at.length) continue;
+    const pts = [...ps].sort((a, b) => a - b);
+    for (let i = 0; i < pts.length; i++) {
+      const from = pts[i], to = i + 1 < pts.length ? pts[i + 1] : Infinity;
+      const inside = at.filter((t) => t >= from && t < to);
+      if (!inside.length) continue;
+      const span = Math.min(inside[inside.length - 1] - from, IDLE_MS * 6) / 60000;
+      const b = get(keyOf(from)); b.spans.push(span);
+    }
+  }
   for (const [m, n] of minutes) {
     const b = get(keyOf(m * 60000));
     b.clockMin++; b.parallelMin += n; if (n > b.peak) b.peak = n;
@@ -272,6 +289,9 @@ function aggregate(keyOf, label) {
     subagentRuns: b.subagentSessions.size, prompts: b.prompts, keyboardHours: Math.round(b.keyboardHours * 10) / 10, agentHours: Math.round(b.activeHours * 10) / 10, activeDays: b.activeDays.size,
     clockHours: Math.round(b.clockMin / 6) / 10, parallelHours: Math.round(b.parallelMin / 6) / 10,
     parallelFactor: b.clockMin ? Math.round(b.parallelMin / b.clockMin * 100) / 100 : 0, peakParallel: b.peak,
+    delegationRatio: b.activeHours && b.keyboardHours ? Math.round(b.activeHours / b.keyboardHours * 100) / 100 : null,
+    autonomySpanMin: b.spans.length ? Math.round(median(b.spans) * 10) / 10 : null,
+    promptLeverageMin: b.spans.length ? Math.round(b.spans.reduce((x, y) => x + y, 0) / b.spans.length * 10) / 10 : null,
     commits: b.commits, aiAssistedCommits: b.aiCommits, linesChanged: b.linesChanged,
     agents: round(b.agents), models: round(b.models), sectors: round(b.sectors), work: round(b.work), matrix: round(b.matrix),
     commitsBySector: round(b.commitSectors), linesBySector: round(b.lineSectors),
@@ -304,8 +324,9 @@ fs.writeFileSync(histFile, JSON.stringify(hist));
 const sum = (k) => months.reduce((s, r) => s + (r[k] || 0), 0);
 const firstOf = (k) => (months.find((m) => m[k] > 0) || {}).month || null;
 const out = {
-  schema: 'buildstats/3', generated: new Date().toISOString(), name: config.name || undefined,
+  schema: 'buildstats/4', generated: new Date().toISOString(), name: config.name || undefined,
   since: hist.lifetime.since,
+  method: { metric: 'AI PTM', version: '1.0', tauMinutes: config.parallelIdleMinutes ?? config.keyboardIdleMinutes ?? 30, spec: 'https://kessdaniel.com/ai-ptm.html' },
   coverage: { tokens: firstOf('tokens'), prompts: firstOf('prompts'), aiAssistedCommits: firstOf('aiAssistedCommits'), commits: firstOf('commits'),
     tokenMonths: months.filter((m) => m.tokens > 0).map((m) => m.month) },
   totals: { tokens: sum('tokens'), outputTokens: sum('outputTokens'), sessions: hist.lifetime.sessions, subagentRuns: sum('subagentRuns'),
@@ -313,6 +334,8 @@ const out = {
     clockHours: Math.round(sum('clockHours')), parallelHours: Math.round(sum('parallelHours')),
     parallelFactor: sum('clockHours') ? Math.round(sum('parallelHours') / sum('clockHours') * 100) / 100 : 0,
     peakParallel: Math.max(0, ...months.map((m) => m.peakParallel || 0)),
+    delegationRatio: (() => { const r = months.filter((m) => m.delegationRatio); const a = r.reduce((s, m) => s + m.agentHours, 0), k = r.reduce((s, m) => s + m.keyboardHours, 0); return k ? Math.round(a / k * 100) / 100 : null; })(),
+    autonomySpanMin: (() => { const r = months.filter((m) => m.autonomySpanMin != null); return r.length ? median(r.map((m) => m.autonomySpanMin)) : null; })(),
     commits: sum('commits'), aiAssistedCommits: sum('aiAssistedCommits'), linesChanged: sum('linesChanged') },
   months, weeks,
 };
