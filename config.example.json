@@ -1,0 +1,15 @@
+{
+  "name": "Your Name",
+  "since": "2026-01-01",
+  "idleMinutes": 10,
+  "keyboardIdleMinutes": 30,
+  "unassigned": "Infrastructure and ops",
+  "zcodeSector": "Infrastructure and ops",
+  "authors": ["you@example.com"],
+  "gitRoots": ["~/Projects"],
+  "sectors": [
+    { "name": "Commerce", "paths": ["~/Projects/shop", "~/Projects/shop-mobile"] },
+    { "name": "Media", "paths": ["~/Projects/newsroom"] }
+  ],
+  "publish": { "url": "https://example.com/api/build-stats", "token": "a-long-random-string" }
+}
