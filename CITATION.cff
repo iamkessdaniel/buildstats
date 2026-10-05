@@ -18,3 +18,13 @@ keywords:
   - developer-productivity
   - parallel-time
   - claude-code
+references:
+  - type: report
+    title: "AI Parallel Time Multiplier (AI PTM): a method for measuring parallel time with AI agents, version 1.0"
+    authors:
+      - given-names: Kess
+        family-names: Daniel
+    doi: 10.5281/zenodo.23173765
+    year: 2026
+    publisher:
+      name: Zenodo

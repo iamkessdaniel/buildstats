@@ -4,7 +4,7 @@ Build in public without giving away your work. buildstats reads the logs your AI
 
 The summary never contains prompts, code, file paths, project names or repo names. You decide the sector names; everything else is a count.
 
-See it running: [kessdaniel.com/build](https://kessdaniel.com/build.html)
+See it running: [kessdaniel.com/build](https://kessdaniel.com/build.html) · Method: [AI PTM v1.0, DOI 10.5281/zenodo.23173765](https://doi.org/10.5281/zenodo.23173765)
 
 ## What it reads
 
@@ -53,7 +53,7 @@ Agents let you work in parallel: several sessions and sub-agents can run at once
 | `promptLeverageMin` | Mean agent minutes set off by one prompt |
 | `method` | The metric, version and idle cut-off behind every figure: `AI PTM v1.0, tau = 30 min` |
 
-The full AI PTM methodology, including prior art, is at [kessdaniel.com/ai-ptm.html](https://kessdaniel.com/ai-ptm.html).
+The full AI PTM methodology, including prior art, is at [kessdaniel.com/ai-ptm.html](https://kessdaniel.com/ai-ptm.html) and on Zenodo: [10.5281/zenodo.23173765](https://doi.org/10.5281/zenodo.23173765).
 
 ## Type of work
 
