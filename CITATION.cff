@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use buildstats or data produced with it, please cite it as below."
+title: "buildstats: anonymous build-in-public stats from AI agent logs and git"
+type: software
+authors:
+  - given-names: Kess
+    family-names: Daniel
+    alias: "Kessiena Majemite"
+    website: "https://kessdaniel.com"
+repository-code: "https://github.com/iamkessdaniel/buildstats"
+url: "https://kessdaniel.com/build.html"
+license: MIT
+version: 0.1.0
+date-released: 2026-10-05
+keywords:
+  - ai-agents
+  - build-in-public
+  - developer-productivity
+  - parallel-time
+  - claude-code
