@@ -326,5 +326,43 @@ if (flag('--publish')) {
   console.error(`publish: ${r.status}`);
   if (!r.ok) process.exit(1);
 }
-if (!opt('--out') && !flag('--publish')) console.log(json);
+if (flag('--profile')) await updateProfile(out);
+if (!opt('--out') && !flag('--publish') && !flag('--profile')) console.log(json);
 else console.error(`months ${months.length}, weeks ${weeks.length}, tokens ${out.totals.tokens.toLocaleString()}, prompts ${out.totals.prompts}, commits ${out.totals.commits}`);
+
+// --profile: rewrite the block between the buildstats markers in a local clone
+// of your GitHub profile README (config.profile.repo), then commit and push.
+async function updateProfile(d) {
+  const p = config.profile || {};
+  if (!p.repo) { console.error('No profile.repo in config'); return; }
+  const dir = expand(p.repo), file = path.join(dir, p.file || 'README.md');
+  const git = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try { git('pull', '--ff-only', '-q'); } catch {}
+  const t = d.totals, last = d.months.at(-1) || {};
+  const n = (v) => Number(v || 0).toLocaleString('en-GB');
+  const big = (v) => v >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : n(v);
+  const month = last.month ? new Date(last.month + '-15').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : '';
+  const block = [
+    '<!-- buildstats:start -->',
+    `| Since ${new Date(d.since + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} | |`,
+    '| --- | --- |',
+    `| Parallel time multiplier | **${(t.parallelFactor || 0).toFixed(1)}×** (${n(t.parallelHours)} hours of work from ${n(t.clockHours)} clock hours) |`,
+    `| Most agent sessions at once | ${n(t.peakParallel)} |`,
+    `| Sessions · prompts | ${n(t.sessions)} · ${n(t.prompts)} |`,
+    `| Commits · lines changed | ${n(t.commits)} · ${big(t.linesChanged)} |`,
+    `| Tokens processed | ${big(t.tokens)} |`,
+    last.month ? `| ${month} so far | ${(last.parallelFactor || 0).toFixed(1)}× parallel, ${n(last.commits)} commits |` : '',
+    '',
+    `<sub>Updated ${d.generated.slice(0, 10)} by [buildstats](https://github.com/iamkessdaniel/buildstats). Grouped totals only: no project names, prompts or code.${p.dashboard ? ` Full dashboard: [${p.dashboard.replace(/^https?:\/\//, '')}](${p.dashboard})` : ''}</sub>`,
+    '<!-- buildstats:end -->',
+  ].filter((l) => l !== null).join('\n');
+  const cur = fs.readFileSync(file, 'utf8');
+  if (!/<!-- buildstats:start -->[\s\S]*?<!-- buildstats:end -->/.test(cur)) { console.error('profile: markers not found in ' + file); return; }
+  const next = cur.replace(/<!-- buildstats:start -->[\s\S]*?<!-- buildstats:end -->/, block);
+  if (next === cur) { console.error('profile: no change'); return; }
+  fs.writeFileSync(file, next);
+  git('add', p.file || 'README.md');
+  git('commit', '-q', '-m', 'Update build stats');
+  git('push', '-q');
+  console.error('profile: pushed');
+}

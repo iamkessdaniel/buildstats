@@ -54,6 +54,10 @@ Each model call is classed by the tools it used: file edits are Building (Writin
 
 The output schema is `buildstats/2`: `totals`, `coverage` (the first month each metric exists), `months[]` and `weeks[]`.
 
+## GitHub profile card
+
+`node collect.mjs --profile` rewrites the block between `<!-- buildstats:start -->` and `<!-- buildstats:end -->` in a local clone of your profile README, then commits and pushes it. Set `profile.repo` to the clone's folder, and optionally `profile.dashboard` to link your full dashboard. Keep the clone outside your `gitRoots`, so its daily commits are not counted as work.
+
 ## Licence
 
 MIT

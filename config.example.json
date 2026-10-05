@@ -11,5 +11,6 @@
     { "name": "Commerce", "paths": ["~/Projects/shop", "~/Projects/shop-mobile"] },
     { "name": "Media", "paths": ["~/Projects/newsroom"] }
   ],
+  "profile": { "repo": "~/.buildstats/profile", "dashboard": "https://example.com/build" },
   "publish": { "url": "https://example.com/api/build-stats", "token": "a-long-random-string" }
 }
