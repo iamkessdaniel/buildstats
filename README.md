@@ -40,6 +40,10 @@ node buildstats/collect.mjs --out stats.json                   # look before you
 - `idleMinutes` / `keyboardIdleMinutes`: gaps longer than this do not count towards agent hours or hours at the keyboard.
 - `publish`: where `--publish` sends the summary, and the bearer token it sends.
 
+## Parallel time
+
+Agents let you work in parallel: several sessions and sub-agents can run at once. buildstats counts every active minute once on the clock (`clockHours`) and once per stream that was working (`parallelHours`). `parallelFactor` is the ratio, the average number of streams running per clock hour, and `peakParallel` is the most that ran in the same minute.
+
 ## Type of work
 
 Each model call is classed by the tools it used: file edits are Building (Writing for Markdown and text files), deploy commands are Shipping, test and type-check commands are Testing, reads and searches are Research, and calls with no tools are Planning.
