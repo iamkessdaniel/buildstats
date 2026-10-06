@@ -326,7 +326,7 @@ const firstOf = (k) => (months.find((m) => m[k] > 0) || {}).month || null;
 const out = {
   schema: 'buildstats/4', generated: new Date().toISOString(), name: config.name || undefined,
   since: hist.lifetime.since,
-  method: { metric: 'AI PTM', version: '1.0', tauMinutes: config.parallelIdleMinutes ?? config.keyboardIdleMinutes ?? 30, spec: 'https://kessdaniel.com/ai-ptm.html', doi: '10.5281/zenodo.23173765' },
+  method: { metric: 'AI PTM', version: '1.0', tauMinutes: config.parallelIdleMinutes ?? config.keyboardIdleMinutes ?? 30, spec: 'https://kessdaniel.com/ai-ptm', doi: '10.5281/zenodo.23173765' },
   coverage: { tokens: firstOf('tokens'), prompts: firstOf('prompts'), aiAssistedCommits: firstOf('aiAssistedCommits'), commits: firstOf('commits'),
     tokenMonths: months.filter((m) => m.tokens > 0).map((m) => m.month) },
   totals: { tokens: sum('tokens'), outputTokens: sum('outputTokens'), sessions: hist.lifetime.sessions, subagentRuns: sum('subagentRuns'),
