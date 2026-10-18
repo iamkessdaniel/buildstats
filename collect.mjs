@@ -10,6 +10,8 @@
  *   node collect.mjs                 # print the summary
  *   node collect.mjs --out stats.json
  *   node collect.mjs --publish       # POST to config.publish.url
+ *   node collect.mjs --board         # POST daily totals to config.board.url (Prompt Board)
+ *   node collect.mjs --board-out f   # write the Prompt Board payload without sending it
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -311,6 +313,18 @@ function keep(store, rows, label) {
 const weeks = keep(hist.weeks, aggregate(isoWeek, 'week'), 'week');
 const months = keep(hist.months, aggregate(isoMonth, 'month'), 'month');
 
+// Prompt Board: daily totals for the last 35 days, built only in board mode.
+// Whitelisted numbers only: no sectors, models, agents, prompts, code or names.
+const BOARD_FIELDS = ['day', 'clockHours', 'parallelHours', 'parallelFactor', 'peakParallel', 'delegationRatio',
+  'autonomySpanMin', 'promptLeverageMin', 'prompts', 'sessions', 'subagentRuns', 'commits', 'outputTokens'];
+const boardMode = flag('--board') || !!opt('--board-out');
+const boardSince = new Date(Date.now() - 35 * 864e5).toISOString().slice(0, 10);
+const days = boardMode
+  ? aggregate((ts) => new Date(ts).toISOString().slice(0, 10), 'day')
+    .filter((d) => d.day >= boardSince).sort((a, b) => a.day.localeCompare(b.day))
+    .map((d) => Object.fromEntries(BOARD_FIELDS.map((k) => [k, d[k] ?? null])))
+  : [];
+
 // Lifetime figures from distinct sessions and days, not sums of buckets.
 const allSessions = new Set([...events.filter((e) => !e.sub).map((e) => e.session), ...prompts.map((p) => p.session).filter(Boolean)]);
 const allDays = new Set([...events.map((e) => e.ts), ...prompts.map((p) => p.ts), ...commits.map((c) => c.ts)].map((t) => new Date(t).toISOString().slice(0, 10)));
@@ -350,7 +364,22 @@ if (flag('--publish')) {
   if (!r.ok) process.exit(1);
 }
 if (flag('--profile')) await updateProfile(out);
-if (!opt('--out') && !flag('--publish') && !flag('--profile')) console.log(json);
+if (boardMode) {
+  const { practiceScore, VERSION } = await import('./promptscore.mjs');
+  const b = config.board || {};
+  const payload = { schema: 'promptboard/1', scoreVersion: VERSION, method: out.method, generated: out.generated,
+    handle: b.handle || null, city: b.city || null, chapter: b.chapter || null,
+    days: days.map((d) => ({ ...d, previewScore: practiceScore(d).score })) };
+  const body = JSON.stringify(payload, null, 2);
+  if (opt('--board-out')) fs.writeFileSync(opt('--board-out'), body);
+  if (flag('--board')) {
+    if (!b.url || !b.token) { console.error('No board.url or board.token in config'); process.exit(1); }
+    const r = await fetch(b.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${b.token}` }, body });
+    console.error(`board: ${r.status}`);
+    if (!r.ok) process.exit(1);
+  }
+}
+if (!opt('--out') && !flag('--publish') && !flag('--profile') && !boardMode) console.log(json);
 else console.error(`months ${months.length}, weeks ${weeks.length}, tokens ${out.totals.tokens.toLocaleString()}, prompts ${out.totals.prompts}, commits ${out.totals.commits}`);
 
 // --profile: rewrite the block between the buildstats markers in a local clone
