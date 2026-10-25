@@ -12,6 +12,8 @@
  *   node collect.mjs --publish       # POST to config.publish.url
  *   node collect.mjs --board         # POST daily totals to config.board.url (Prompt Board)
  *   node collect.mjs --board-out f   # write the Prompt Board payload without sending it
+ *   node collect.mjs --entry <slug>  # POST totals for one online challenge window (Prompt Nights)
+ *   node collect.mjs --entry <slug> --entry-out f   # write that payload without sending it
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -379,7 +381,29 @@ if (boardMode) {
     if (!r.ok) process.exit(1);
   }
 }
-if (!opt('--out') && !flag('--publish') && !flag('--profile') && !boardMode) console.log(json);
+// Prompt Nights online entry: totals for the challenge window only. The window
+// comes from the server (it started the clock), so the builder cannot pick it.
+const entrySlug = opt('--entry');
+if (entrySlug) {
+  const b = config.board || {};
+  if (!b.url || !b.token) { console.error('No board.url or board.token in config'); process.exit(1); }
+  const origin = new URL(b.url).origin, auth = { Authorization: `Bearer ${b.token}` };
+  const w = await fetch(`${origin}/api/online/entry?challenge=${encodeURIComponent(entrySlug)}`, { headers: auth });
+  if (!w.ok) { console.error(`entry window: ${w.status}`); process.exit(1); }
+  const { from, to } = await w.json(), a = Date.parse(from), z = Date.parse(to);
+  const [t = {}] = aggregate((ts) => (ts >= a && ts < z ? 'entry' : 'outside'), 'window').filter((r) => r.window === 'entry');
+  const ENTRY_FIELDS = ['clockHours', 'parallelHours', 'parallelFactor', 'peakParallel', 'prompts', 'sessions', 'subagentRuns', 'commits', 'tokens', 'outputTokens'];
+  const payload = { schema: 'promptentry/1', challenge: entrySlug, window: { from, to }, method: out.method,
+    totals: Object.fromEntries(ENTRY_FIELDS.map((k) => [k, t[k] ?? null])) };
+  const body = JSON.stringify(payload, null, 2);
+  if (opt('--entry-out')) fs.writeFileSync(opt('--entry-out'), body);
+  else {
+    const r = await fetch(`${origin}/api/online/stats`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...auth }, body });
+    console.error(`entry: ${r.status}`);
+    if (!r.ok) process.exit(1);
+  }
+}
+if (!opt('--out') && !flag('--publish') && !flag('--profile') && !boardMode && !entrySlug) console.log(json);
 else console.error(`months ${months.length}, weeks ${weeks.length}, tokens ${out.totals.tokens.toLocaleString()}, prompts ${out.totals.prompts}, commits ${out.totals.commits}`);
 
 // --profile: rewrite the block between the buildstats markers in a local clone
