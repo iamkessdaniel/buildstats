@@ -330,7 +330,9 @@ const days = boardMode
 // Lifetime figures from distinct sessions and days, not sums of buckets.
 const allSessions = new Set([...events.filter((e) => !e.sub).map((e) => e.session), ...prompts.map((p) => p.session).filter(Boolean)]);
 const allDays = new Set([...events.map((e) => e.ts), ...prompts.map((p) => p.ts), ...commits.map((c) => c.ts)].map((t) => new Date(t).toISOString().slice(0, 10)));
-const firstAi = Math.min(...commits.filter((c) => c.ai).map((c) => c.ts), ...prompts.map((p) => p.ts), ...events.map((e) => e.ts));
+// A loop: spreading hundreds of thousands of timestamps into Math.min overflows the stack.
+let firstAi = Infinity;
+for (const list of [commits.filter((c) => c.ai), prompts, events]) for (const x of list) if (x.ts < firstAi) firstAi = x.ts;
 const life = hist.lifetime || {};
 hist.lifetime = { sessions: Math.max(life.sessions || 0, allSessions.size), activeDays: Math.max(life.activeDays || 0, allDays.size),
   since: new Date(Math.min(firstAi, life.since ? Date.parse(life.since) : Infinity)).toISOString().slice(0, 10) };
