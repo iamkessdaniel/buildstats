@@ -19,12 +19,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { collectAdditional } from './agent-sources.mjs';
 
 const HOME = os.homedir();
 const DIR = process.env.BUILDSTATS_HOME || path.join(HOME, '.buildstats');
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+if (flag('--dry-run') && ['--publish', '--profile', '--board', '--entry'].some(flag)) {
+  throw new Error('--dry-run cannot publish, update a profile, or submit board/entry data');
+}
 
 const config = loadConfig();
 const IDLE_MS = (config.idleMinutes ?? 10) * 60000;
@@ -204,9 +208,11 @@ function collectPrompts() {
 // ---------- aggregate ----------
 collectClaudeCode();
 collectZCode();
+const additional = collectAdditional({ config, home: HOME, dir: DIR, since: SINCE, sectorOf, touchedSector });
+events.push(...additional.events);
 const commits = collectGit();
-const prompts = collectPrompts();
-for (const e of events) e.work = workType(e.tools);
+const prompts = [...collectPrompts(), ...additional.prompts];
+for (const e of events) e.work ||= workType(e.tools);
 
 const median = (a) => { const v = [...a].sort((x, y) => x - y); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : 0; };
 const isoMonth = (ts) => new Date(ts).toISOString().slice(0, 7);
@@ -243,7 +249,7 @@ function aggregate(keyOf, label) {
     }
   };
   const agentRuns = {}, typed = {};
-  for (const e of events) if (!e.sub) (agentRuns[e.session] ||= []).push(e.ts);
+  for (const e of events) if (!e.sub) (agentRuns[e.session] ||= []).push(...(e.startTs < e.ts ? [e.startTs, e.ts] : [e.ts]));
   for (const p of prompts) if (p.session) (typed[p.session] ||= []).push(p.ts);
   gaps(agentRuns, IDLE_MS, 'activeHours');
   gaps(typed, (config.keyboardIdleMinutes ?? 30) * 60000, 'keyboardHours');
@@ -252,7 +258,7 @@ function aggregate(keyOf, label) {
   // minute counts once on the clock but once per stream in parallel hours.
   // parallelHours / clockHours is how many streams ran at once on average.
   const streams = {}, PCUT = (config.parallelIdleMinutes ?? config.keyboardIdleMinutes ?? 30) * 60000;
-  for (const e of events) (streams[(e.sub ? 'sub:' : '') + e.session] ||= []).push(e.ts);
+  for (const e of events) (streams[(e.sub ? 'sub:' : '') + e.session] ||= []).push(...(e.startTs < e.ts ? [e.startTs, e.ts] : [e.ts]));
   for (const p of prompts) if (p.session) (streams[p.session] ||= []).push(p.ts);
   const minutes = new Map();
   for (const list of Object.values(streams)) {
@@ -334,10 +340,13 @@ const allDays = new Set([...events.map((e) => e.ts), ...prompts.map((p) => p.ts)
 let firstAi = Infinity;
 for (const list of [commits.filter((c) => c.ai), prompts, events]) for (const x of list) if (x.ts < firstAi) firstAi = x.ts;
 const life = hist.lifetime || {};
+const sinceTs = Math.min(firstAi, life.since ? Date.parse(life.since) : Infinity);
 hist.lifetime = { sessions: Math.max(life.sessions || 0, allSessions.size), activeDays: Math.max(life.activeDays || 0, allDays.size),
-  since: new Date(Math.min(firstAi, life.since ? Date.parse(life.since) : Infinity)).toISOString().slice(0, 10) };
-fs.mkdirSync(DIR, { recursive: true });
-fs.writeFileSync(histFile, JSON.stringify(hist));
+  since: new Date(Number.isFinite(sinceTs) ? sinceTs : SINCE).toISOString().slice(0, 10) };
+if (!flag('--dry-run')) {
+  fs.mkdirSync(DIR, { recursive: true });
+  fs.writeFileSync(histFile, JSON.stringify(hist));
+}
 
 const sum = (k) => months.reduce((s, r) => s + (r[k] || 0), 0);
 const firstOf = (k) => (months.find((m) => m[k] > 0) || {}).month || null;
@@ -347,6 +356,8 @@ const out = {
   method: { metric: 'AI PTM', version: '1.0', tauMinutes: config.parallelIdleMinutes ?? config.keyboardIdleMinutes ?? 30, spec: 'https://kessdaniel.com/ai-ptm', doi: '10.5281/zenodo.23173765' },
   coverage: { tokens: firstOf('tokens'), prompts: firstOf('prompts'), aiAssistedCommits: firstOf('aiAssistedCommits'), commits: firstOf('commits'),
     tokenMonths: months.filter((m) => m.tokens > 0).map((m) => m.month) },
+  // Fresh-log coverage only. Historical buckets may outlive these source logs.
+  sourceCoverage: additional.sources,
   totals: { tokens: sum('tokens'), outputTokens: sum('outputTokens'), sessions: hist.lifetime.sessions, subagentRuns: sum('subagentRuns'),
     prompts: sum('prompts'), keyboardHours: Math.round(sum('keyboardHours')), agentHours: Math.round(sum('agentHours')), activeDays: hist.lifetime.activeDays,
     clockHours: Math.round(sum('clockHours')), parallelHours: Math.round(sum('parallelHours')),
