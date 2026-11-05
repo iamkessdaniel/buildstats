@@ -425,7 +425,7 @@ async function updateProfile(d) {
   const p = config.profile || {};
   if (!p.repo) { console.error('No profile.repo in config'); return; }
   const dir = expand(p.repo), file = path.join(dir, p.file || 'README.md');
-  const git = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const git = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   try { git('pull', '--ff-only', '-q'); } catch {}
   const t = d.totals, last = d.months.at(-1) || {};
   const n = (v) => Number(v || 0).toLocaleString('en-GB');
